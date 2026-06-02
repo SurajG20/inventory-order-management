@@ -1,4 +1,4 @@
-from sqlalchemy import select, func
+from sqlalchemy import select, func, text, extract
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 from fastapi import HTTPException, status
@@ -222,7 +222,6 @@ async def get_dashboard(db: AsyncSession) -> dict:
 
     monthly_orders = []
     monthly_revenue = []
-    from sqlalchemy import text, extract
     months_result = await db.execute(
         select(
             func.to_char(Order.created_at, "Mon"),
