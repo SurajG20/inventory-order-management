@@ -56,7 +56,14 @@ async def update_product(db: AsyncSession, product_id: int, data: ProductUpdate)
 async def delete_product(db: AsyncSession, product_id: int) -> None:
     product = await get_product(db, product_id)
     await db.delete(product)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="Cannot delete this product because it is referenced by existing orders. Remove the orders first.",
+        )
 
 
 async def create_customer(db: AsyncSession, data: CustomerCreate) -> Customer:
@@ -90,7 +97,14 @@ async def get_customer(db: AsyncSession, customer_id: int) -> Customer:
 async def delete_customer(db: AsyncSession, customer_id: int) -> None:
     customer = await get_customer(db, customer_id)
     await db.delete(customer)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="Cannot delete this customer because they have existing orders. Remove the orders first.",
+        )
 
 
 async def create_order(db: AsyncSession, data: OrderCreate) -> Order:
