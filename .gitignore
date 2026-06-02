@@ -8,3 +8,5 @@ venv/
 pgdata/
 .DS_Store
 *.egg-info/
+
+.vercel
