@@ -27,7 +27,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   return (
     <aside
       className={cn(
-        'hidden lg:flex flex-col bg-white border-r border-border h-screen sticky top-0 z-40',
+        'hidden lg:flex flex-col bg-white border-r border-border h-screen fixed left-0 top-0 z-40',
         'transition-all duration-300',
         collapsed ? 'w-16' : 'w-60'
       )}
