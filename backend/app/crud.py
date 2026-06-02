@@ -183,18 +183,98 @@ async def delete_order(db: AsyncSession, order_id: int) -> None:
     await db.commit()
 
 
+async def update_order_status(db: AsyncSession, order_id: int, status: str) -> Order:
+    order = await get_order(db, order_id)
+    order.status = status
+    await db.commit()
+    await db.refresh(order)
+    return order
+
+
 async def get_dashboard(db: AsyncSession) -> dict:
     total_products = (await db.execute(select(func.count(Product.id)))).scalar()
     total_customers = (await db.execute(select(func.count(Customer.id)))).scalar()
     total_orders = (await db.execute(select(func.count(Order.id)))).scalar()
 
+    total_revenue_result = await db.execute(
+        select(func.coalesce(func.sum(Order.total_amount), 0))
+        .where(Order.status != "cancelled")
+    )
+    total_revenue = float(total_revenue_result.scalar() or 0)
+
+    inventory_value_result = await db.execute(
+        select(func.coalesce(func.sum(Product.price * Product.quantity_in_stock), 0))
+    )
+    inventory_value = float(inventory_value_result.scalar() or 0)
+
     low_stock = (await db.execute(
-        select(Product).where(Product.quantity_in_stock <= 5).order_by(Product.quantity_in_stock.asc())
+        select(Product)
+        .where(Product.quantity_in_stock <= 5)
+        .order_by(Product.quantity_in_stock.asc())
     )).scalars().all()
+
+    recent_orders_result = await db.execute(
+        select(Order)
+        .order_by(Order.created_at.desc())
+        .limit(10)
+    )
+    recent_orders = recent_orders_result.scalars().all()
+
+    monthly_orders = []
+    monthly_revenue = []
+    from sqlalchemy import text, extract
+    months_result = await db.execute(
+        select(
+            func.to_char(Order.created_at, "Mon"),
+            func.count(Order.id),
+            func.coalesce(func.sum(Order.total_amount), 0),
+            extract("month", Order.created_at),
+            extract("year", Order.created_at),
+        )
+        .where(
+            Order.created_at >= func.date_trunc("month", func.now()) - text("interval '5 months'")
+        )
+        .group_by(
+            extract("year", Order.created_at),
+            extract("month", Order.created_at),
+            func.to_char(Order.created_at, "Mon"),
+        )
+        .order_by(
+            extract("year", Order.created_at),
+            extract("month", Order.created_at),
+        )
+    )
+    for row in months_result:
+        monthly_orders.append({"month": row[0], "orders": row[1]})
+        monthly_revenue.append({"month": row[0], "revenue": float(row[2])})
+
+    in_stock = (await db.execute(
+        select(func.count(Product.id)).where(Product.quantity_in_stock > 5)
+    )).scalar() or 0
+    low = (await db.execute(
+        select(func.count(Product.id)).where(
+            Product.quantity_in_stock > 0, Product.quantity_in_stock <= 5
+        )
+    )).scalar() or 0
+    out_of_stock = (await db.execute(
+        select(func.count(Product.id)).where(Product.quantity_in_stock == 0)
+    )).scalar() or 0
+
+    stock_distribution = [
+        {"status": "in_stock", "count": in_stock},
+        {"status": "low_stock", "count": low},
+        {"status": "out_of_stock", "count": out_of_stock},
+    ]
 
     return {
         "total_products": total_products,
         "total_customers": total_customers,
         "total_orders": total_orders,
+        "total_revenue": total_revenue,
+        "inventory_value": inventory_value,
         "low_stock_products": list(low_stock),
+        "recent_orders": list(recent_orders),
+        "monthly_orders": monthly_orders,
+        "monthly_revenue": monthly_revenue,
+        "stock_distribution": stock_distribution,
     }

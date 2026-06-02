@@ -1,11 +1,17 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Any
+from pydantic import BaseModel, Field
 
 from app.database import get_db
 from app.schemas import OrderCreate, OrderOut
 from app import crud
 from app.models import Order
+
+
+class StatusUpdate(BaseModel):
+    status: str = Field(..., pattern="^(pending|processing|completed|cancelled)$")
+
 
 router = APIRouter(prefix="/orders", tags=["Orders"])
 
@@ -52,3 +58,11 @@ async def get_order(order_id: int, db: AsyncSession = Depends(get_db)):
 @router.delete("/{order_id}", status_code=204)
 async def delete_order(order_id: int, db: AsyncSession = Depends(get_db)):
     await crud.delete_order(db, order_id)
+
+
+@router.patch("/{order_id}/status", response_model=dict)
+async def update_order_status(
+    order_id: int, data: StatusUpdate, db: AsyncSession = Depends(get_db)
+):
+    order = await crud.update_order_status(db, order_id, data.status)
+    return _format_order(order)

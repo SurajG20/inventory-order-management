@@ -89,4 +89,10 @@ class DashboardOut(BaseModel):
     total_products: int
     total_customers: int
     total_orders: int
+    total_revenue: float
+    inventory_value: float
     low_stock_products: list[ProductOut]
+    recent_orders: list[OrderOut]
+    monthly_orders: list[dict]
+    monthly_revenue: list[dict]
+    stock_distribution: list[dict]
