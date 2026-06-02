@@ -1,4 +1,4 @@
-from sqlalchemy import select, func, text, extract
+from sqlalchemy import select, func, text, extract, String as SAString
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 from fastapi import HTTPException, status
@@ -220,15 +220,17 @@ async def get_dashboard(db: AsyncSession) -> dict:
     )
     recent_orders = recent_orders_result.scalars().all()
 
-    monthly_orders = []
-    monthly_revenue = []
+    monthly_orders: list[dict] = []
+    monthly_revenue: list[dict] = []
     months_result = await db.execute(
         select(
-            func.to_char(Order.created_at, "Mon"),
-            func.count(Order.id),
-            func.coalesce(func.sum(Order.total_amount), 0),
-            extract("month", Order.created_at),
-            extract("year", Order.created_at),
+            func.concat(
+                extract("year", Order.created_at).cast(SAString),
+                "-",
+                func.lpad(extract("month", Order.created_at).cast(SAString), 2, "0"),
+            ).label("month_label"),
+            func.count(Order.id).label("order_count"),
+            func.coalesce(func.sum(Order.total_amount), 0).label("revenue_sum"),
         )
         .where(
             Order.created_at >= func.date_trunc("month", func.now()) - text("interval '5 months'")
@@ -236,16 +238,26 @@ async def get_dashboard(db: AsyncSession) -> dict:
         .group_by(
             extract("year", Order.created_at),
             extract("month", Order.created_at),
-            func.to_char(Order.created_at, "Mon"),
         )
         .order_by(
             extract("year", Order.created_at),
             extract("month", Order.created_at),
         )
     )
+
+    month_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
     for row in months_result:
-        monthly_orders.append({"month": row[0], "orders": row[1]})
-        monthly_revenue.append({"month": row[0], "revenue": float(row[2])})
+        label = row.month_label
+        if label and "-" in label:
+            parts = label.split("-")
+            if len(parts) == 2:
+                try:
+                    m = int(parts[1])
+                    label = f"{month_names[m - 1] if 1 <= m <= 12 else '?'} {parts[0]}"
+                except ValueError:
+                    pass
+        monthly_orders.append({"month": label, "orders": row.order_count})
+        monthly_revenue.append({"month": label, "revenue": float(row.revenue_sum)})
 
     in_stock = (await db.execute(
         select(func.count(Product.id)).where(Product.quantity_in_stock > 5)
